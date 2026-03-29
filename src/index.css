@@ -1,0 +1,76 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&family=Outfit:wght@400;700;900&family=Orbitron:wght@400;700;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-carbon: #0a0a0a;
+  --color-f1-red: #ff1801;
+  --color-neon-blue: #00d2ff;
+  
+  /* Theme Mappings */
+  --color-primary: var(--color-f1-red);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: rgba(255, 255, 255, 0.05); /* surface */
+  --color-secondary-foreground: #ffffff;
+  --color-background: var(--color-carbon);
+  --color-foreground: #ffffff;
+  --color-muted: rgba(255, 255, 255, 0.1);
+  --color-muted-foreground: rgba(255, 255, 255, 0.5);
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-destructive: #ff1801;
+  --color-destructive-foreground: #ffffff;
+
+  --color-surface: rgba(255, 255, 255, 0.03);
+  --color-surface-hover: rgba(255, 255, 255, 0.08);
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'Outfit', sans-serif;
+  --font-orbitron: 'Orbitron', sans-serif;
+}
+
+.text-glow-red { text-shadow: 0 0 15px rgba(255, 24, 1, 0.6); }
+
+.grid-overlay {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+body {
+  background-color: var(--color-carbon);
+  color: white;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+}
+
+.bg-carbon { background-color: var(--color-carbon); }
+.text-f1-red { color: var(--color-f1-red); }
+.bg-f1-red { background-color: var(--color-f1-red); }
+.text-neon-blue { color: var(--color-neon-blue); }
+.bg-neon-blue { background-color: var(--color-neon-blue); }
+
+.font-display { font-family: var(--font-display); }
+.font-orbitron { font-family: var(--font-orbitron); }
+
+.text-glow {
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-carbon);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.2);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.4);
+}
