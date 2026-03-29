@@ -207,11 +207,11 @@ function CameraController({ activePodiumIndex, virtualProgress, transitionState,
     const shouldZoomIn = activePodiumIndex !== null && !['returning_main_shirt', 'idle'].includes(transitionState);
     if (shouldZoomIn) {
       // Zoom extremely close. Center look target slightly below the object so object sits in top half of screen on mobile.
-      const inspectPos = isMobile ? new THREE.Vector3(0, 1.2, 5.5) : new THREE.Vector3(0, 1.5, 4.5);
-      const inspectLookTarget = isMobile ? new THREE.Vector3(0, 1.4, 0) : new THREE.Vector3(0, 1.25, 0);
+      const inspectPos = isMobile ? new THREE.Vector3(0, 1.2, 5.8) : new THREE.Vector3(0, 1.5, 4.5);
+      const inspectLookTarget = isMobile ? new THREE.Vector3(0, 1.6, 0) : new THREE.Vector3(0, 1.25, 0);
       currentPosition.current.lerp(inspectPos, delta * 3.5); // Snappier zoom-in
       targetLookAt.current.copy(inspectLookTarget);
-      cameraRef.current.fov = THREE.MathUtils.lerp(cameraRef.current.fov, isMobile ? 45 : 30, delta * 3.5);
+      cameraRef.current.fov = THREE.MathUtils.lerp(cameraRef.current.fov, isMobile ? 55 : 30, delta * 3.5);
     } else {
       cameraRef.current.fov = THREE.MathUtils.lerp(cameraRef.current.fov, isMobile ? 55 : 40, delta * 2.5);
       const t = state.clock.getElapsedTime();
@@ -277,8 +277,33 @@ export function GarageShowcase() {
       e.preventDefault();
       scrollValue.set(Math.min(1000, Math.max(0, scrollValue.get() + e.deltaY * 0.5)));
     };
+
+    let lastTouchY = 0;
+    const handleTouchStart = (e: TouchEvent) => {
+      if (activePodium !== null || sizeChartOpen) return;
+      lastTouchY = e.touches[0].clientY;
+    };
+    
+    const handleTouchMove = (e: TouchEvent) => {
+      if (activePodium !== null || sizeChartOpen) return;
+      // Prevent pull-to-refresh and rubber banding
+      if (e.cancelable) e.preventDefault();
+      const currentY = e.touches[0].clientY;
+      const deltaY = lastTouchY - currentY; 
+      lastTouchY = currentY;
+      scrollValue.set(Math.min(1000, Math.max(0, scrollValue.get() + deltaY * 2)));
+    };
+
     window.addEventListener('wheel', handleWheel, { passive: false });
-    return () => window.removeEventListener('wheel', handleWheel);
+    window.addEventListener('touchstart', handleTouchStart, { passive: false });
+    // Adding non-passive touchmove is needed to call preventDefault
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+    return () => {
+      window.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+    };
   }, [activePodium, sizeChartOpen, scrollValue]);
 
   const podiums = [
@@ -377,14 +402,14 @@ export function GarageShowcase() {
   return (
     <div className="relative w-full h-screen bg-[#020202] overflow-hidden selection:bg-f1-red/30">
       <div className="absolute inset-0 z-0">
-        <Canvas shadows dpr={[1, 2]}>
+        <Canvas shadows gl={{ antialias: !isMobile, powerPreference: "high-performance" }} dpr={isMobile ? [1, 1.2] : [1, 2]}>
           <Suspense fallback={null}>
             <color attach="background" args={['#020202']} />
             <CameraController activePodiumIndex={activePodium} virtualProgress={currentVirtualProgress} transitionState={transitionState} isMobile={isMobile} />
             <ambientLight intensity={0.4} />
             <directionalLight position={[0, 10, 5]} intensity={0.5} />
             <WindTunnel />
-            <Sparkles count={isMobile ? 50 : 150} scale={10} size={isMobile ? 1.5 : 2} speed={0.4} opacity={0.1} color="#ffffff" position={[0, 5, 0]} />
+            <Sparkles count={isMobile ? 25 : 150} scale={10} size={isMobile ? 1.5 : 2} speed={0.4} opacity={0.1} color="#ffffff" position={[0, 5, 0]} />
             {podiums.map((podium, i) => (
               <GaragePodium key={i} index={i} globalActiveIndex={activePodium} position={podium.position} accentColor={podium.accentColor} isActive={activePodium === i} onClick={() => handleInteractionStart(i)} modelPath={podium.modelPath} transitionState={transitionState} isMobile={isMobile} />
             ))}
@@ -393,7 +418,7 @@ export function GarageShowcase() {
               {!isMobile ? (
                 <MeshReflectorMaterial blur={[400, 100]} resolution={1024} mixBlur={1} mixStrength={15} roughness={1} depthScale={1.2} minDepthThreshold={0.4} maxDepthThreshold={1.4} color="#050505" metalness={0.5} mirror={0.5} />
               ) : (
-                <MeshReflectorMaterial blur={[200, 50]} resolution={256} mixBlur={1} mixStrength={10} roughness={1} depthScale={1.2} minDepthThreshold={0.4} maxDepthThreshold={1.4} color="#050505" metalness={0.5} mirror={0.3} />
+                <MeshReflectorMaterial blur={[100, 25]} resolution={128} mixBlur={0.5} mixStrength={5} roughness={1} depthScale={1.2} minDepthThreshold={0.4} maxDepthThreshold={1.4} color="#050505" metalness={0.5} mirror={0.15} />
               )}
             </mesh>
             <Environment preset="night" environmentIntensity={0.2} />
