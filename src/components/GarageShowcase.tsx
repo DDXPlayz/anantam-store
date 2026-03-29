@@ -35,7 +35,7 @@ function WindTunnel() {
   );
 }
 
-// Custom rotation helper to handle drag interaction
+// Custom rotation helper to handle drag interaction natively via shortest path (quaternions)
 function InteractiveShirt({
   modelPath,
   isActive,
@@ -48,14 +48,13 @@ function InteractiveShirt({
   const groupRef = useRef<THREE.Group>(null);
   const targetRotation = useRef(new THREE.Euler(0, 0, 0));
   const isDragging = useRef(false);
-  const hasInteracted = useRef(false);
+  const idleAngle = useRef(0);
   const lastMouse = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     const handleDown = (e: PointerEvent) => { 
       if (isActive && transitionState === 'ready') {
         isDragging.current = true;
-        hasInteracted.current = true;
         lastMouse.current = { x: e.clientX, y: e.clientY };
       }
     };
@@ -81,30 +80,37 @@ function InteractiveShirt({
     };
   }, [isActive, transitionState]);
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     if (!groupRef.current) return;
 
     if (isActive) {
       if (transitionState === 'ready') {
-        groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, targetRotation.current.x, delta * 5);
-        groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, targetRotation.current.y, delta * 5);
-      } else if (transitionState === 'entering' || transitionState === 'centering' || transitionState === 'returning_ui_out') {
-        if (transitionState === 'returning_ui_out') hasInteracted.current = false;
+        // User inspects. Slerp to dragged target rotation securely.
+        const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(targetRotation.current.x, targetRotation.current.y, 0));
+        groupRef.current.quaternion.slerp(targetQ, delta * 5);
+        // Sync idle tracker precisely to where user left it so returning is a clean continuation
+        idleAngle.current = targetRotation.current.y;
+      } else if (['entering', 'centering', 'returning_ui_out'].includes(transitionState)) {
         targetRotation.current.set(0, 0, 0);
-        groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, 0, delta * 3);
-        groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, 0, delta * 3);
+        const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0));
+        // Use shortest-path soft dampening to front-facing view. Fixes the "rapid catchup spin" completely.
+        groupRef.current.quaternion.slerp(targetQ, delta * 3.5);
+        idleAngle.current = 0; 
       } else {
-        const syncRotation = state.clock.elapsedTime * 0.5;
-        const targetY = hasInteracted.current ? targetRotation.current.y : syncRotation;
-        groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, hasInteracted.current ? targetRotation.current.x : 0, delta * 2);
-        groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, targetY, delta * 2);
+        // Active but idle state. Keep angle frozen at our most recent track exactly.
+        const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, idleAngle.current, 0));
+        groupRef.current.quaternion.slerp(targetQ, delta * 4);
       }
     } else {
-      const syncRotation = state.clock.elapsedTime * 0.5;
-      targetRotation.current.set(0, syncRotation, 0);
-      hasInteracted.current = false;
-      groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, 0, delta * 4);
-      groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, syncRotation, delta * 4);
+      // Background items rotate slowly based purely on delta tick. No global sync multiplier causing infinity wraps.
+      idleAngle.current += delta * 0.3;
+      if (idleAngle.current > Math.PI * 2) idleAngle.current -= Math.PI * 2; // Prevent extremely large numbers
+      
+      const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, idleAngle.current, 0));
+      groupRef.current.quaternion.slerp(targetQ, delta * 4);
+      
+      // Keep target rotation loosely synced to background so next tap starts nicely
+      targetRotation.current.set(0, idleAngle.current, 0); 
     }
   });
 
@@ -171,8 +177,8 @@ function GaragePodium({
   return (
     <group>
       <group ref={groupRef} position={position}>
-        <spotLight position={[0, 6, -5]} intensity={20} angle={0.6} penumbra={0.5} color="#ffffff" distance={25} castShadow />
-        <spotLight position={[0, 1, -2]} intensity={isMobile ? 0 : 15} angle={1.2} penumbra={1} color={accentColor} distance={10} castShadow={!isMobile} />
+        <spotLight position={[0, 6, -5]} intensity={isMobile ? 35 : 20} angle={0.6} penumbra={0.5} color="#ffffff" distance={25} castShadow={!isMobile} />
+        <spotLight position={[0, 1, -2]} intensity={isMobile ? 10 : 15} angle={1.2} penumbra={1} color={accentColor} distance={10} castShadow={!isMobile} />
         <group position={[0, -1.5, 0]}>
           <mesh receiveShadow castShadow position={[0, 0.2, 0]}>
             <cylinderGeometry args={[1, 1.2, 0.4, 64]} />
@@ -191,7 +197,7 @@ function GaragePodium({
       </group>
       <group ref={shirtGroupRef} position={position}>
         <InteractiveShirt modelPath={modelPath} isActive={isActive} transitionState={transitionState} />
-        {isActive && <spotLight position={[0, 2, 5]} intensity={25} angle={0.8} penumbra={1} color="#ffffff" distance={15} castShadow />}
+        {isActive && <spotLight position={[0, 2, 5]} intensity={isMobile ? 45 : 25} angle={0.8} penumbra={1} color="#ffffff" distance={15} castShadow={!isMobile} />}
       </group>
       <ContactShadows position={[0, -1.45, 0]} opacity={0.6} scale={4} resolution={512} blur={2.5} far={3} color="#000000" />
     </group>
@@ -414,8 +420,8 @@ export function GarageShowcase() {
           <Suspense fallback={null}>
             <color attach="background" args={['#020202']} />
             <CameraController activePodiumIndex={activePodium} smoothProgress={smoothProgress} transitionState={transitionState} isMobile={isMobile} />
-            <ambientLight intensity={0.4} />
-            <directionalLight position={[0, 10, 5]} intensity={0.5} />
+            <ambientLight intensity={isMobile ? 1.0 : 0.4} />
+            <directionalLight position={[0, 10, 5]} intensity={isMobile ? 1.5 : 0.5} />
             <WindTunnel />
             {!isMobile && <Sparkles count={150} scale={10} size={2} speed={0.4} opacity={0.1} color="#ffffff" position={[0, 5, 0]} />}
             {podiums.map((podium, i) => (
@@ -429,7 +435,7 @@ export function GarageShowcase() {
                 <MeshReflectorMaterial blur={[100, 25]} resolution={128} mixBlur={0.5} mixStrength={5} roughness={1} depthScale={1.2} minDepthThreshold={0.4} maxDepthThreshold={1.4} color="#050505" metalness={0.5} mirror={0.15} />
               )}
             </mesh>
-            <Environment preset="night" environmentIntensity={0.2} />
+            <Environment preset="night" environmentIntensity={isMobile ? 0.75 : 0.2} />
             <fog attach="fog" args={['#020202', 8, 30]} />
             {!isMobile && (
               <EffectComposer>
@@ -501,7 +507,7 @@ export function GarageShowcase() {
             >
                 {isMobile && (
                   <div 
-                    onPointerDown={(e) => dragControls.start(e)}
+                    onPointerDown={(e: any) => dragControls.start(e)}
                     onClick={() => isMinimized && setIsMinimized(false)}
                     className="w-full shrink-0 flex flex-col items-center py-6 cursor-pointer sticky top-0 bg-transparent z-60 touch-none"
                   >
