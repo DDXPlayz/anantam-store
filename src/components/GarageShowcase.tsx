@@ -3,7 +3,7 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { Environment, PerspectiveCamera, ContactShadows, MeshReflectorMaterial, Html, Sparkles, useGLTF, Loader } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
-import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useSpring, useTransform, useDragControls } from 'framer-motion';
 import { ShirtDisplay } from './ShirtDisplay';
 import { SizeChartModal } from './SizeChartModal';
 import { MessageCircle, Plus, Minus } from 'lucide-react';
@@ -48,16 +48,36 @@ function InteractiveShirt({
   const groupRef = useRef<THREE.Group>(null);
   const targetRotation = useRef(new THREE.Euler(0, 0, 0));
   const isDragging = useRef(false);
+  const hasInteracted = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
-    const handleDown = () => { if (isActive && transitionState === 'ready') isDragging.current = true; };
+    const handleDown = (e: PointerEvent) => { 
+      if (isActive && transitionState === 'ready') {
+        isDragging.current = true;
+        hasInteracted.current = true;
+        lastMouse.current = { x: e.clientX, y: e.clientY };
+      }
+    };
     const handleUp = () => { isDragging.current = false; };
+    const handleMove = (e: PointerEvent) => {
+      if (isDragging.current) {
+        const deltaX = e.clientX - lastMouse.current.x;
+        const deltaY = e.clientY - lastMouse.current.y;
+        lastMouse.current = { x: e.clientX, y: e.clientY };
+        
+        targetRotation.current.y += deltaX * 0.01;
+        targetRotation.current.x += deltaY * 0.01;
+        targetRotation.current.x = THREE.MathUtils.clamp(targetRotation.current.x, -0.4, 0.4);
+      }
+    };
     window.addEventListener('pointerdown', handleDown);
     window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointermove', handleMove);
     return () => {
       window.removeEventListener('pointerdown', handleDown);
       window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointermove', handleMove);
     };
   }, [isActive, transitionState]);
 
@@ -66,38 +86,26 @@ function InteractiveShirt({
 
     if (isActive) {
       if (transitionState === 'ready') {
-        if (isDragging.current) {
-          const deltaX = state.mouse.x - lastMouse.current.x;
-          const deltaY = state.mouse.y - lastMouse.current.y;
-          targetRotation.current.y += deltaX * 2.5;
-          targetRotation.current.x -= deltaY * 1.5;
-          targetRotation.current.x = THREE.MathUtils.clamp(targetRotation.current.x, -0.4, 0.4);
-        }
         groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, targetRotation.current.x, delta * 5);
         groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, targetRotation.current.y, delta * 5);
       } else if (transitionState === 'entering' || transitionState === 'centering' || transitionState === 'returning_ui_out') {
-        const diffY = Math.atan2(Math.sin(-groupRef.current.rotation.y), Math.cos(-groupRef.current.rotation.y));
-        const targetY = groupRef.current.rotation.y + diffY;
-        targetRotation.current.set(0, targetY, 0);
+        if (transitionState === 'returning_ui_out') hasInteracted.current = false;
+        targetRotation.current.set(0, 0, 0);
         groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, 0, delta * 3);
-        groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, targetY, delta * 3);
+        groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, 0, delta * 3);
       } else {
         const syncRotation = state.clock.elapsedTime * 0.5;
-        const diffY = Math.atan2(Math.sin(syncRotation - groupRef.current.rotation.y), Math.cos(syncRotation - groupRef.current.rotation.y));
-        const targetY = groupRef.current.rotation.y + diffY;
-        targetRotation.current.set(0, targetY, 0);
-        groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, 0, delta * 2);
+        const targetY = hasInteracted.current ? targetRotation.current.y : syncRotation;
+        groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, hasInteracted.current ? targetRotation.current.x : 0, delta * 2);
         groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, targetY, delta * 2);
       }
     } else {
       const syncRotation = state.clock.elapsedTime * 0.5;
-      const diffY = Math.atan2(Math.sin(syncRotation - groupRef.current.rotation.y), Math.cos(syncRotation - groupRef.current.rotation.y));
-      const targetY = groupRef.current.rotation.y + diffY;
+      targetRotation.current.set(0, syncRotation, 0);
+      hasInteracted.current = false;
       groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, 0, delta * 4);
-      groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, targetY, delta * 4);
+      groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, syncRotation, delta * 4);
     }
-    lastMouse.current.x = state.mouse.x;
-    lastMouse.current.y = state.mouse.y;
   });
 
   return (
@@ -164,7 +172,7 @@ function GaragePodium({
     <group>
       <group ref={groupRef} position={position}>
         <spotLight position={[0, 6, -5]} intensity={20} angle={0.6} penumbra={0.5} color="#ffffff" distance={25} castShadow />
-        <spotLight position={[0, 1, -2]} intensity={15} angle={1.2} penumbra={1} color={accentColor} distance={10} castShadow />
+        <spotLight position={[0, 1, -2]} intensity={isMobile ? 0 : 15} angle={1.2} penumbra={1} color={accentColor} distance={10} castShadow={!isMobile} />
         <group position={[0, -1.5, 0]}>
           <mesh receiveShadow castShadow position={[0, 0.2, 0]}>
             <cylinderGeometry args={[1, 1.2, 0.4, 64]} />
@@ -190,7 +198,7 @@ function GaragePodium({
   );
 }
 
-function CameraController({ activePodiumIndex, virtualProgress, transitionState, isMobile }: { activePodiumIndex: number | null, virtualProgress: number, transitionState: TransitionState, isMobile: boolean }) {
+function CameraController({ activePodiumIndex, smoothProgress, transitionState, isMobile }: { activePodiumIndex: number | null, smoothProgress: any, transitionState: TransitionState, isMobile: boolean }) {
   const cameraRef = useRef<THREE.PerspectiveCamera>(null);
   // Bring the hero and garage cameras noticeably closer and lower
   // On mobile, 14 is much closer than 26, ensuring immediate visual impact.
@@ -215,7 +223,7 @@ function CameraController({ activePodiumIndex, virtualProgress, transitionState,
     } else {
       cameraRef.current.fov = THREE.MathUtils.lerp(cameraRef.current.fov, isMobile ? 55 : 40, delta * 2.5);
       const t = state.clock.getElapsedTime();
-      const progress = virtualProgress;
+      const progress = smoothProgress.get() / 1000;
       const basePos = heroPosition.clone().lerp(garagePosition, progress);
       const baseLook = heroLookAt.clone().lerp(garageLookAt, progress);
       if (progress > 0.9) {
@@ -250,7 +258,8 @@ export function GarageShowcase() {
   const progressNormalized = useTransform(smoothProgress, [0, 1000], [0, 1]);
   const heroOpacity = useTransform(progressNormalized, [0, 0.3], [1, 0]);
   const heroY = useTransform(progressNormalized, [0, 0.3], [0, -50]);
-  const [currentVirtualProgress, setCurrentVirtualProgress] = useState(0);
+  const heroPointerEvents = useTransform(progressNormalized, [0, 0.1], ["auto" as const, "none" as const]);
+  const dragControls = useDragControls();
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -259,9 +268,8 @@ export function GarageShowcase() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  useEffect(() => smoothProgress.on("change", (v) => setCurrentVirtualProgress(v / 1000)), [smoothProgress]);
-
   useEffect(() => {
+    document.body.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
     document.body.style.overscrollBehavior = 'none';
     return () => {
@@ -400,16 +408,16 @@ export function GarageShowcase() {
   }, [activePodium, sizeChartOpen]);
 
   return (
-    <div className="relative w-full h-screen bg-[#020202] overflow-hidden selection:bg-f1-red/30">
+    <div className="relative w-full h-[100dvh] bg-[#020202] overflow-hidden selection:bg-f1-red/30 touch-none">
       <div className="absolute inset-0 z-0">
-        <Canvas shadows gl={{ antialias: !isMobile, powerPreference: "high-performance" }} dpr={isMobile ? [1, 1.2] : [1, 2]}>
+        <Canvas shadows gl={{ antialias: false, powerPreference: "high-performance" }} dpr={isMobile ? [1, 1.2] : [1, 2]}>
           <Suspense fallback={null}>
             <color attach="background" args={['#020202']} />
-            <CameraController activePodiumIndex={activePodium} virtualProgress={currentVirtualProgress} transitionState={transitionState} isMobile={isMobile} />
+            <CameraController activePodiumIndex={activePodium} smoothProgress={smoothProgress} transitionState={transitionState} isMobile={isMobile} />
             <ambientLight intensity={0.4} />
             <directionalLight position={[0, 10, 5]} intensity={0.5} />
             <WindTunnel />
-            <Sparkles count={isMobile ? 25 : 150} scale={10} size={isMobile ? 1.5 : 2} speed={0.4} opacity={0.1} color="#ffffff" position={[0, 5, 0]} />
+            {!isMobile && <Sparkles count={150} scale={10} size={2} speed={0.4} opacity={0.1} color="#ffffff" position={[0, 5, 0]} />}
             {podiums.map((podium, i) => (
               <GaragePodium key={i} index={i} globalActiveIndex={activePodium} position={podium.position} accentColor={podium.accentColor} isActive={activePodium === i} onClick={() => handleInteractionStart(i)} modelPath={podium.modelPath} transitionState={transitionState} isMobile={isMobile} />
             ))}
@@ -423,9 +431,11 @@ export function GarageShowcase() {
             </mesh>
             <Environment preset="night" environmentIntensity={0.2} />
             <fog attach="fog" args={['#020202', 8, 30]} />
-            <EffectComposer>
-              <Bloom luminanceThreshold={1} mipmapBlur intensity={activePodium !== null ? 0.2 : 0.8} />
-            </EffectComposer>
+            {!isMobile && (
+              <EffectComposer>
+                <Bloom luminanceThreshold={1} mipmapBlur intensity={activePodium !== null ? 0.2 : 0.8} />
+              </EffectComposer>
+            )}
           </Suspense>
         </Canvas>
       </div>
@@ -445,8 +455,8 @@ export function GarageShowcase() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {activePodium === null && transitionState === 'idle' && currentVirtualProgress < 0.5 && (
-          <motion.div style={{ opacity: heroOpacity, y: heroY }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 z-10 pointer-events-none flex flex-col justify-start pt-[12vh] md:pt-[15vh] items-center text-center px-4">
+        {activePodium === null && transitionState === 'idle' && (
+          <motion.div style={{ opacity: heroOpacity, y: heroY, pointerEvents: heroPointerEvents }} className="absolute inset-0 z-10 flex flex-col justify-start pt-[12vh] md:pt-[15vh] items-center text-center px-4">
             <h1 className="text-[14vw] md:text-[10vw] font-display font-black italic tracking-tighter uppercase leading-[0.8] text-white">ANANTAM RACING</h1>
             <h2 className="mt-2 md:mt-4 text-sm md:text-2xl font-display font-black tracking-[0.3em] text-f1-red uppercase text-glow italic">FAST. FIERCE. FEARLESS.</h2>
             <div className="mt-12 group flex flex-col items-center gap-4">
@@ -471,36 +481,39 @@ export function GarageShowcase() {
             </button>
 
             <motion.div
-              initial={isMobile ? { y: '100%', opacity: 0 } : { x: '100%', opacity: 0 }}
+              initial={isMobile ? { y: '100dvh', opacity: 0 } : { x: '100%', opacity: 0 }}
               animate={isMobile 
-                ? { y: isMinimized ? '82%' : 0, opacity: 1 } 
+                ? { y: isMinimized ? '45dvh' : 0, opacity: 1 } 
                 : { x: 0, opacity: 1 }
               }
               transition={{ type: "spring", damping: 25, stiffness: 150 }}
               drag={isMobile ? "y" : false}
+              dragControls={dragControls}
+              dragListener={false}
               dragConstraints={{ top: 0, bottom: 500 }}
-              dragElastic={0.1}
+              dragElastic={0.05}
               onDragEnd={(_, info) => {
                 if (info.offset.y > 50) setIsMinimized(true);
                 else if (info.offset.y < -30) setIsMinimized(false);
               }}
               onWheel={(e) => e.stopPropagation()}
-              className="absolute inset-x-0 bottom-0 top-auto md:inset-auto md:right-0 md:top-0 md:bottom-0 w-full md:w-[500px] h-[55vh] md:h-screen md:bg-carbon/40 bg-carbon/95 backdrop-blur-3xl md:backdrop-blur-[60px] border-t-2 md:border-t-0 md:border-l border-white/20 md:border-white/10 p-6 pt-0 md:p-16 flex flex-col pointer-events-auto overflow-y-auto max-h-[55vh] md:max-h-screen custom-scrollbar rounded-t-[40px] md:rounded-none z-50 shadow-[0_-20px_60px_rgba(0,0,0,0.9)] md:shadow-none"
+              className="absolute inset-x-0 bottom-0 top-auto md:inset-auto md:right-0 md:top-0 md:bottom-0 w-full md:w-[500px] h-[55dvh] md:h-[100dvh] md:bg-carbon/40 bg-carbon/95 backdrop-blur-3xl md:backdrop-blur-[60px] border-t-2 md:border-t-0 md:border-l border-white/20 md:border-white/10 p-6 pt-0 md:p-16 flex flex-col pointer-events-auto z-50 shadow-[0_-20px_60px_rgba(0,0,0,0.9)] md:shadow-none"
             >
                 {isMobile && (
                   <div 
-                    onClick={() => setIsMinimized(!isMinimized)}
-                    className="w-full flex flex-col items-center py-6 cursor-pointer sticky top-0 bg-transparent z-60 touch-none"
+                    onPointerDown={(e) => dragControls.start(e)}
+                    onClick={() => isMinimized && setIsMinimized(false)}
+                    className="w-full shrink-0 flex flex-col items-center py-6 cursor-pointer sticky top-0 bg-transparent z-60 touch-none"
                   >
                     <div className="w-16 h-1.5 rounded-full bg-white/20 hover:bg-white/40 transition-colors mb-2" />
                     {isMinimized && (
                       <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="font-orbitron text-[8px] tracking-[0.4em] text-f1-red uppercase font-black italic">
-                        Tap or Swipe up to expand
+                        Tap handle to expand
                       </motion.p>
                     )}
                   </div>
                 )}
-                <div className={`relative pb-12 transition-all duration-500 ${isMinimized && isMobile ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}>
+                <div className={`relative flex-1 overflow-y-auto custom-scrollbar transition-all duration-500 pb-12 ${isMinimized && isMobile ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100 pointer-events-auto'}`}>
                   <div className={`absolute -top-32 -left-32 w-64 h-64 rounded-full blur-[120px] opacity-20`} style={{ backgroundColor: podiums[activePodium].accentColor }} />
                   <p className="font-mono text-[10px] tracking-[0.5em] text-f1-red uppercase mb-4 italic font-bold">// SEASON 01 LIMITED</p>
                   <h3 className="text-4xl md:text-6xl font-display font-black uppercase tracking-tighter leading-[0.9] mb-4 text-white italic">
